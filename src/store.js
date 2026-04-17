@@ -182,19 +182,25 @@ function updatePreapproval(id, data) {
 function createCardToken(data) {
   const id = `tok_mock_${nextId()}`;
 
+  const cardNumber = data.card_number || '';
   const token = {
     id,
     public_key: data.public_key || '',
-    card_number_length: 16,
-    last_four_digits: data.card_number ? data.card_number.slice(-4) : '4242',
+    card_id: null,
+    card_number_length: cardNumber.length || 16,
+    first_six_digits: cardNumber.substring(0, 6) || '424242',
+    last_four_digits: cardNumber.slice(-4) || '4242',
     status: 'active',
+    date_used: null,
     date_created: new Date().toISOString(),
     date_last_updated: new Date().toISOString(),
     date_due: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    expiration_month: data.expiration_month || 12,
+    expiration_year: data.expiration_year || 2030,
     luhn_validation: true,
     live_mode: false,
     cardholder: data.cardholder || { name: 'TEST USER' },
-    security_code_length: 3,
+    security_code_length: data.security_code ? data.security_code.length : 3,
   };
 
   store.cardTokens.set(id, token);
