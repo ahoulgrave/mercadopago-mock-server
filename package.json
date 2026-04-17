@@ -1,0 +1,22 @@
+{
+  "name": "mercadopago-mock-server",
+  "version": "0.1.0",
+  "description": "Local mock server for MercadoPago API — test payments, subscriptions, and webhooks without hitting the real API",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "mercadopago",
+    "mock",
+    "testing",
+    "payments",
+    "webhooks"
+  ],
+  "author": "Agustin Houlgrave",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
