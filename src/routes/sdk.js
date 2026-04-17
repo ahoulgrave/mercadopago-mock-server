@@ -21,7 +21,10 @@ function fakeSdk() {
 (function() {
   'use strict';
 
-  var MOCK_BASE = window.__MP_MOCK_BASE || window.location.origin;
+  // Detect the mock server origin from the script tag's src attribute
+  var scripts = document.querySelectorAll('script[src*="/js/v2"]');
+  var scriptSrc = scripts.length ? scripts[scripts.length - 1].src : '';
+  var MOCK_BASE = window.__MP_MOCK_BASE || (scriptSrc ? new URL(scriptSrc).origin : window.location.origin);
 
   // ─── Field Instance ──────────────────────────────────────────────────
   function FieldInstance(type, options) {

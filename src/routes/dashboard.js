@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { getAllResources, getPayment, updatePaymentStatus, getPreapproval, updatePreapproval, store } = require('../store');
+const { getAllResources, getPayment, updatePaymentStatus, getPreapproval, updatePreapproval, updatePayment, store } = require('../store');
 const { sendWebhook } = require('../webhooks');
 
 const router = Router();
@@ -121,6 +121,21 @@ function dashboardPage() {
         <div id="preapprovals" class="empty">No subscriptions yet</div>
       </div>
 
+      <div class="section" id="customers-section">
+        <h2>Customers <span class="count" id="cust-count">0</span></h2>
+        <div id="customers" class="empty">No customers yet</div>
+      </div>
+
+      <div class="section" id="orders-section">
+        <h2>Orders <span class="count" id="order-count">0</span></h2>
+        <div id="orders" class="empty">No orders yet</div>
+      </div>
+
+      <div class="section" id="merchant-orders-section">
+        <h2>Merchant Orders <span class="count" id="mo-count">0</span></h2>
+        <div id="merchantOrders" class="empty">No merchant orders yet</div>
+      </div>
+
       <div class="section" style="grid-column: 1 / -1;">
         <h2>Webhook Log <span class="count" id="log-count">0</span></h2>
         <div id="webhookLogs" class="empty">No webhooks sent yet</div>
@@ -175,10 +190,10 @@ function dashboardPage() {
           '<div class="item-header"><span class="item-id">' + p.id + '</span><span class="status status-' + p.status + '">' + p.status + '</span></div>' +
           '<div class="item-detail">' + (p.currency_id || 'ARS') + ' ' + p.transaction_amount + ' &mdash; ' + esc(p.external_reference || '') + '</div>' +
           '<div class="item-actions">' +
-            '<button class="action-approve" onclick="sendWebhook(\'payment\',\'' + p.id + '\',\'approved\')">Approve</button>' +
-            '<button class="action-reject" onclick="sendWebhook(\'payment\',\'' + p.id + '\',\'rejected\')">Reject</button>' +
-            '<button class="action-refund" onclick="sendWebhook(\'payment\',\'' + p.id + '\',\'refunded\')">Refund</button>' +
-            '<button class="action-webhook" onclick="sendWebhook(\'payment\',\'' + p.id + '\')">Re-send Webhook</button>' +
+            '<button class="action-approve" onclick="sendWebhook(&#39;payment&#39;,&#39;' + p.id + '&#39;,&#39;approved&#39;)">Approve</button>' +
+            '<button class="action-reject" onclick="sendWebhook(&#39;payment&#39;,&#39;' + p.id + '&#39;,&#39;rejected&#39;)">Reject</button>' +
+            '<button class="action-refund" onclick="sendWebhook(&#39;payment&#39;,&#39;' + p.id + '&#39;,&#39;refunded&#39;)">Refund</button>' +
+            '<button class="action-webhook" onclick="sendWebhook(&#39;payment&#39;,&#39;' + p.id + '&#39;)">Re-send Webhook</button>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -206,9 +221,9 @@ function dashboardPage() {
           '<div class="item-detail">' + esc(p.reason) + ' &mdash; ' + (r.currency_id || '') + ' ' + (r.transaction_amount || 0) + '</div>' +
           '<div class="item-detail">Email: ' + esc(p.payer_email) + ' | Ref: ' + esc(p.external_reference) + '</div>' +
           '<div class="item-actions">' +
-            '<button class="action-approve" onclick="sendWebhook(\'subscription_preapproval\',\'' + p.id + '\',\'authorized\')">Authorize</button>' +
-            '<button class="action-reject" onclick="sendWebhook(\'subscription_preapproval\',\'' + p.id + '\',\'cancelled\')">Cancel</button>' +
-            '<button class="action-webhook" onclick="sendWebhook(\'subscription_preapproval\',\'' + p.id + '\')">Re-send Webhook</button>' +
+            '<button class="action-approve" onclick="sendWebhook(&#39;subscription_preapproval&#39;,&#39;' + p.id + '&#39;,&#39;authorized&#39;)">Authorize</button>' +
+            '<button class="action-reject" onclick="sendWebhook(&#39;subscription_preapproval&#39;,&#39;' + p.id + '&#39;,&#39;cancelled&#39;)">Cancel</button>' +
+            '<button class="action-webhook" onclick="sendWebhook(&#39;subscription_preapproval&#39;,&#39;' + p.id + '&#39;)">Re-send Webhook</button>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -227,6 +242,43 @@ function dashboardPage() {
       }).join('');
     }
 
+    function renderCustomers(items) {
+      document.getElementById('cust-count').textContent = items.length;
+      if (!items.length) { document.getElementById('customers').innerHTML = '<div class="empty">No customers yet</div>'; return; }
+      document.getElementById('customers').innerHTML = items.map(c => {
+        return '<div class="item">' +
+          '<div class="item-header"><span class="item-id">' + c.id + '</span><span class="status status-active">' + c.status + '</span></div>' +
+          '<div class="item-detail">' + esc(c.email) + '</div>' +
+          '<div class="item-detail">' + esc((c.first_name || '') + ' ' + (c.last_name || '')).trim() + '</div>' +
+          '<div class="item-detail">Cards: ' + (c.cards?.paging?.total || 0) + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function renderOrders(items) {
+      document.getElementById('order-count').textContent = items.length;
+      if (!items.length) { document.getElementById('orders').innerHTML = '<div class="empty">No orders yet</div>'; return; }
+      document.getElementById('orders').innerHTML = items.map(o => {
+        return '<div class="item">' +
+          '<div class="item-header"><span class="item-id">' + o.id + '</span><span class="status status-' + o.status + '">' + o.status + '</span></div>' +
+          '<div class="item-detail">' + esc(o.description || '-') + ' &mdash; ' + (o.total_amount || 0) + '</div>' +
+          '<div class="item-detail">Ref: ' + esc(o.external_reference) + ' | Txns: ' + (o.transactions?.payments?.length || 0) + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function renderMerchantOrders(items) {
+      document.getElementById('mo-count').textContent = items.length;
+      if (!items.length) { document.getElementById('merchantOrders').innerHTML = '<div class="empty">No merchant orders yet</div>'; return; }
+      document.getElementById('merchantOrders').innerHTML = items.map(m => {
+        return '<div class="item">' +
+          '<div class="item-header"><span class="item-id">' + m.id + '</span><span class="status status-' + (m.cancelled ? 'cancelled' : 'active') + '">' + m.order_status + '</span></div>' +
+          '<div class="item-detail">Total: ' + (m.total_amount || 0) + ' | Paid: ' + (m.paid_amount || 0) + '</div>' +
+          '<div class="item-detail">Ref: ' + esc(m.external_reference) + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
     function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
     async function refresh() {
@@ -237,6 +289,9 @@ function dashboardPage() {
         renderPayments(data.payments);
         renderPlans(data.plans);
         renderPreapprovals(data.preapprovals);
+        renderCustomers(data.customers);
+        renderOrders(data.orders);
+        renderMerchantOrders(data.merchantOrders);
         renderLogs(data.webhookLogs);
       } catch (e) {
         console.error('Refresh failed:', e);

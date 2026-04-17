@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { store, createPaymentFromPreference } = require('../store');
+const { store, createPaymentFromPreference, createPayment } = require('../store');
 const { sendWebhook } = require('../webhooks');
 
 const router = Router();
@@ -81,17 +81,39 @@ router.post('/subscription/:preapprovalId/authorize', async (req, res) => {
   preapproval.status = status;
   preapproval.last_modified = new Date().toISOString();
 
-  // Try to find a notification URL from the linked plan or env
+  const plan = preapproval.preapproval_plan_id ? store.plans.get(preapproval.preapproval_plan_id) : null;
+  const recurring = preapproval.auto_recurring || {};
+
+  // When authorized, create a payment for the first billing cycle (like the real API does)
+  let payment = null;
+  if (status === 'authorized') {
+    payment = createPayment({
+      status: 'approved',
+      payment_type_id: 'credit_card',
+      payment_method_id: 'visa',
+      transaction_amount: recurring.transaction_amount || 0,
+      currency_id: recurring.currency_id || 'ARS',
+      description: preapproval.reason || 'Subscription payment',
+      external_reference: preapproval.external_reference || '',
+      payer: { email: preapproval.payer_email || 'test@test.com' },
+    });
+    console.log(`[checkout] Created payment ${payment.id} for subscription ${preapproval.id}`);
+  }
+
+  // Send webhooks
   const notificationUrl = process.env.WEBHOOK_URL || '';
   if (notificationUrl) {
     await sendWebhook(notificationUrl, 'subscription_preapproval', preapproval.id);
+    if (payment) {
+      await sendWebhook(notificationUrl, 'payment', payment.id);
+    }
   }
 
-  const plan = preapproval.preapproval_plan_id ? store.plans.get(preapproval.preapproval_plan_id) : null;
   const backUrl = plan?.back_url || '';
 
   res.json({
     preapproval_id: preapproval.id,
+    payment_id: payment ? payment.id : null,
     status,
     redirect_url: backUrl || null,
   });

@@ -3,5 +3,6 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --production
 COPY . .
-EXPOSE 3000
+EXPOSE 3001
+ENV PORT=3001
 CMD ["node", "src/index.js"]
