@@ -34,8 +34,15 @@ router.post('/checkout/:preferenceId/pay', async (req, res) => {
   const status = req.body.status || 'approved';
   const payment = createPaymentFromPreference(req.params.preferenceId, status);
 
-  // Send webhook
-  const webhookUrl = preference.notification_url;
+  // Send webhook. WEBHOOK_URL_OVERRIDE wins over preference.notification_url
+  // so a local mock can always reach the local backend (e.g.
+  // http://php:8080/... inside docker) even when the preference was built
+  // with a remote URL (production / ngrok / stale tunnel) by mistake.
+  // Without the override we fall back to the preference, then to WEBHOOK_URL
+  // as a last-resort default.
+  const webhookUrl = process.env.WEBHOOK_URL_OVERRIDE
+    || preference.notification_url
+    || process.env.WEBHOOK_URL;
   if (webhookUrl) {
     await sendWebhook(webhookUrl, 'payment', payment.id);
   }
@@ -100,8 +107,14 @@ router.post('/subscription/:preapprovalId/authorize', async (req, res) => {
     console.log(`[checkout] Created payment ${payment.id} for subscription ${preapproval.id}`);
   }
 
-  // Send webhooks
-  const notificationUrl = process.env.WEBHOOK_URL || '';
+  // Send webhooks. Honors the same override → preference → fallback chain
+  // as the one-time payment path so dev environments can force webhooks
+  // back to their local backend.
+  const notificationUrl = process.env.WEBHOOK_URL_OVERRIDE
+    || preapproval.notification_url
+    || (plan && plan.notification_url)
+    || process.env.WEBHOOK_URL
+    || '';
   if (notificationUrl) {
     await sendWebhook(notificationUrl, 'subscription_preapproval', preapproval.id);
     if (payment) {
@@ -109,13 +122,22 @@ router.post('/subscription/:preapprovalId/authorize', async (req, res) => {
     }
   }
 
-  const backUrl = plan?.back_url || '';
+  // Real MercadoPago appends preapproval_id (and payment_id when there is one)
+  // to the back_url. Mirror that so the FE has the same query params to read.
+  let redirectUrl = plan?.back_url || preapproval.back_url || '';
+  if (redirectUrl) {
+    const sep = redirectUrl.includes('?') ? '&' : '?';
+    const params = [`preapproval_id=${preapproval.id}`, `status=${status}`];
+    if (payment) params.push(`payment_id=${payment.id}`);
+    if (preapproval.external_reference) params.push(`external_reference=${preapproval.external_reference}`);
+    redirectUrl += sep + params.join('&');
+  }
 
   res.json({
     preapproval_id: preapproval.id,
     payment_id: payment ? payment.id : null,
     status,
-    redirect_url: backUrl || null,
+    redirect_url: redirectUrl || null,
   });
 });
 
@@ -171,7 +193,10 @@ function checkoutPage(preference, item, backUrls) {
       el.innerHTML = '<strong>Payment ' + status + '</strong> (ID: ' + data.payment_id + ')';
 
       if (data.redirect_url) {
-        el.innerHTML += '<br><a href="' + data.redirect_url + '">Continue to site &rarr;</a>';
+        el.innerHTML += '<br>Redirecting&hellip; <a href="' + data.redirect_url + '">Continue manually</a>';
+        // Auto-redirect like real MercadoPago does with auto_return=approved.
+        // Brief delay so the user sees the outcome before the page changes.
+        setTimeout(function () { window.location.href = data.redirect_url; }, 800);
       }
     }
   </script>
@@ -230,7 +255,8 @@ function subscriptionPage(preapproval) {
       el.innerHTML = '<strong>Subscription ' + status + '</strong>';
 
       if (data.redirect_url) {
-        el.innerHTML += '<br><a href="' + data.redirect_url + '">Continue to site &rarr;</a>';
+        el.innerHTML += '<br>Redirecting&hellip; <a href="' + data.redirect_url + '">Continue manually</a>';
+        setTimeout(function () { window.location.href = data.redirect_url; }, 800);
       }
     }
   </script>
